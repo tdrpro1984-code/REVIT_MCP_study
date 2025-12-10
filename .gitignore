@@ -6,7 +6,9 @@ MCP-Server/node_modules/
 
 # IDE and Editor files
 .vs/
-.vscode/
+.vscode/*
+!.vscode/settings.json
+!.vscode/mcp.json
 *.user
 *.suo
 *.cache
