@@ -492,7 +492,7 @@ dir build\index.js
 3.  進入 **Manage MCP servers** 分頁。
 
 目標結果顯示:
-![alt text](image.png)
+![Antigravity MCP Setup](docs/images/antigravity_mcp_setup.png)
 
 #### Step 2: 編輯 Raw Config (核心步驟)
 
