@@ -587,34 +587,113 @@ export function registerRevitTools(): Tool[] {
             },
         },
 
-        // 26. 通用元素查詢
+        // 26. 取得目前視圖的品類架構 (第一階段)
         {
-            name: "query_elements",
-            description: "查詢視圖中的元素，可依照類別 (Category) 過濾。",
+            name: "get_active_schema",
+            description: "取得目前視圖中實際存在的所有品類及其元素數量，協助決定查詢目標。",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    viewId: {
+                        type: "number",
+                        description: "視圖 ID (選填，預設為目前視圖)",
+                    },
+                },
+            },
+        },
+
+        // 27. 取得品類的參數欄位 (第二階段 - A)
+        {
+            name: "get_category_fields",
+            description: "取得指定品類的所有參數欄位名稱，區分實例參數與類型參數。",
             inputSchema: {
                 type: "object",
                 properties: {
                     category: {
                         type: "string",
-                        description: "元素類別 (例如 'Dimensions', 'Walls', 'Rooms', 'Windows')",
-                    },
-                    viewId: {
-                        type: "number",
-                        description: "視圖 ID (選填，若未提供則查詢目前視圖)",
-                    },
-                    maxCount: {
-                        type: "number",
-                        description: "最大回傳數量 (預設 100)",
+                        description: "元素類別 (例如 'Walls', 'Windows')",
                     },
                 },
                 required: ["category"],
             },
         },
 
-        // 27. 覆寫元素圖形顯示
+        // 28. 取得參數值的分布情況 (第二階段 - B)
+        {
+            name: "get_field_values",
+            description: "取得指定品類中某個參數的現有值分布（唯一值清單或數值範圍）。",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    category: {
+                        type: "string",
+                        description: "元素類別",
+                    },
+                    fieldName: {
+                        type: "string",
+                        description: "參數欄位名稱",
+                    },
+                    maxSamples: {
+                        type: "number",
+                        description: "最大採樣數量 (預設 500)",
+                        default: 500,
+                    },
+                },
+                required: ["category", "fieldName"],
+            },
+        },
+
+        // 29. 通用元素查詢 (第三階段 - 增強版)
+        {
+            name: "query_elements",
+            description: "查詢視圖中的元素，支援多重過濾條件與自定義回傳欄位。",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    category: {
+                        type: "string",
+                        description: "元素類別 (例如 'Walls', 'Windows')",
+                    },
+                    viewId: {
+                        type: "number",
+                        description: "視圖 ID (選填)",
+                    },
+                    filters: {
+                        type: "array",
+                        description: "過濾條件陣列",
+                        items: {
+                            type: "object",
+                            properties: {
+                                field: { type: "string", description: "欄位名稱" },
+                                operator: { 
+                                    type: "string", 
+                                    enum: ["equals", "contains", "less_than", "greater_than", "not_equals"],
+                                    description: "比較運算子"
+                                },
+                                value: { type: "string", description: "比對值 (數值亦請傳入字串)" }
+                            },
+                            required: ["field", "operator", "value"]
+                        }
+                    },
+                    returnFields: {
+                        type: "array",
+                        description: "指定要回傳的參數欄位清單",
+                        items: { type: "string" }
+                    },
+                    maxCount: {
+                        type: "number",
+                        description: "最大回傳數量 (預設 100)",
+                        default: 100,
+                    },
+                },
+                required: ["category"],
+            },
+        },
+
+        // 30. 覆寫元素圖形顯示
         {
             name: "override_element_graphics",
-            description: "在指定視圖中覆寫元素的圖形顯示（填滿顏色、圖樣、線條顏色等）。適用於平面圖中標記不同狀態的牆體或其他元素。",
+            description: "在指定視圖中覆寫元素的圖形顯示（填滿顏色、圖樣、線條顏色等）。",
             inputSchema: {
                 type: "object",
                 properties: {
@@ -661,7 +740,7 @@ export function registerRevitTools(): Tool[] {
             },
         },
 
-        // 28. 清除元素圖形覆寫
+        // 31. 清除元素圖形覆寫
         {
             name: "clear_element_override",
             description: "清除元素在指定視圖中的圖形覆寫，恢復為預設顯示。",
