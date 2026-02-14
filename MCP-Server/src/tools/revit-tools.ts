@@ -587,55 +587,55 @@ export function registerRevitTools(): Tool[] {
             },
         },
 
-        // 26. 取得目前視圖的品類架構 (第一階段)
+        // 26. Get active schema (Phase 1: Exploration)
         {
             name: "get_active_schema",
-            description: "取得目前視圖中實際存在的所有品類及其元素數量，協助決定查詢目標。",
+            description: "[Phase 1: Exploration] Get all categories and their element counts in the active view. ALWAYS run this first to confirm if the target category exists. (取得目前視圖中的所有品類及數量。在查詢前請先執行此工具確認目標品類是否存在。)",
             inputSchema: {
                 type: "object",
                 properties: {
                     viewId: {
                         type: "number",
-                        description: "視圖 ID (選填，預設為目前視圖)",
+                        description: "The view Element ID (Optional, defaults to active view)",
                     },
                 },
             },
         },
 
-        // 27. 取得品類的參數欄位 (第二階段 - A)
+        // 27. Get category fields (Phase 2: Alignment)
         {
             name: "get_category_fields",
-            description: "取得指定品類的所有參數欄位名稱，區分實例參數與類型參數。",
+            description: "[Phase 2: Alignment] Get all parameter names for a specific category. MANDATORY: Run this before 'query_elements_with_filter' to identify exact localized parameter names. (取得指定品類的所有參數欄位名稱。在執行進階查詢前，務必先跑此工具確認精確名稱，嚴禁猜測。)",
             inputSchema: {
                 type: "object",
                 properties: {
                     category: {
                         type: "string",
-                        description: "元素類別 (例如 'Walls', 'Windows')",
+                        description: "The category internal name (e.g., 'Walls', 'Windows')",
                     },
                 },
                 required: ["category"],
             },
         },
 
-        // 28. 取得參數值的分布情況 (第二階段 - B)
+        // 28. Get field value distribution (Phase 2.5)
         {
             name: "get_field_values",
-            description: "取得指定品類中某個參數的現有值分布（唯一值清單或數值範圍）。",
+            description: "[Optional Phase 2.5] Get the distribution of existing values (unique list or range) for a specific parameter. (取得指定參數的現有值分佈情況，協助確定過濾條件的值範圍。)",
             inputSchema: {
                 type: "object",
                 properties: {
                     category: {
                         type: "string",
-                        description: "元素類別",
+                        description: "The category internal name",
                     },
                     fieldName: {
                         type: "string",
-                        description: "參數欄位名稱",
+                        description: "The parameter name (e.g., 'Fire Rating')",
                     },
                     maxSamples: {
                         type: "number",
-                        description: "最大採樣數量 (預設 500)",
+                        description: "Max samples to analyze (Default: 500)",
                         default: 500,
                     },
                 },
@@ -643,34 +643,34 @@ export function registerRevitTools(): Tool[] {
             },
         },
 
-        // 29. 通用元素查詢 (第三階段 - 增強版)
+        // 29. Advanced element query (Phase 3: Retrieval)
         {
-            name: "query_elements",
-            description: "查詢視圖中的元素，支援多重過濾條件與自定義回傳欄位。",
+            name: "query_elements_with_filter",
+            description: "[Phase 3: Retrieval] Query elements with multi-filter support. NOTE: The 'field' name MUST match names from 'get_category_fields'. Units are typically in mm. (進階查詢工具，支援多重過濾。注意：filters 中的 field 必須嚴格匹配從 get_category_fields 取得的名稱。)",
             inputSchema: {
                 type: "object",
                 properties: {
                     category: {
                         type: "string",
-                        description: "元素類別 (例如 'Walls', 'Windows')",
+                        description: "The category internal name (e.g., 'Walls', 'Windows')",
                     },
                     viewId: {
                         type: "number",
-                        description: "視圖 ID (選填)",
+                        description: "The view Element ID (Optional)",
                     },
                     filters: {
                         type: "array",
-                        description: "過濾條件陣列",
+                        description: "List of filter conditions",
                         items: {
                             type: "object",
                             properties: {
-                                field: { type: "string", description: "欄位名稱" },
+                                field: { type: "string", description: "Parameter name (MUST be from get_category_fields)" },
                                 operator: { 
                                     type: "string", 
                                     enum: ["equals", "contains", "less_than", "greater_than", "not_equals"],
-                                    description: "比較運算子"
+                                    description: "Comparison operator"
                                 },
-                                value: { type: "string", description: "比對值 (數值亦請傳入字串)" }
+                                value: { type: "string", description: "Comparison value (strings for text, numeric strings for numbers)" }
                             },
                             required: ["field", "operator", "value"]
                         }
@@ -775,7 +775,8 @@ export async function executeRevitTool(
     client: RevitSocketClient
 ): Promise<any> {
     // 將工具名稱轉換為 Revit 命令名稱
-    const commandName = toolName;
+    // 如果是 query_elements_with_filter，映射到 C# 的 query_elements
+    const commandName = toolName === "query_elements_with_filter" ? "query_elements" : toolName;
 
     // 發送命令到 Revit
     const response = await client.sendCommand(commandName, args);
