@@ -1,6 +1,6 @@
 /**
- * Revit Socket 客戶端
- * 負責與 Revit Plugin 的 WebSocket 通訊
+ * Revit Socket Client
+ * Handles WebSocket communication with Revit Plugin
  */
 
 import WebSocket from 'ws';
@@ -18,30 +18,45 @@ export interface RevitResponse {
     requestId?: string;
 }
 
+// 預設 port 為 8964，可透過環境變數 REVIT_MCP_PORT 覆寫
+const DEFAULT_PORT = 8964;
+
+function getConfiguredPort(): number {
+    const envPort = process.env.REVIT_MCP_PORT;
+    if (envPort) {
+        const parsed = parseInt(envPort, 10);
+        if (!isNaN(parsed) && parsed >= 1024 && parsed <= 65535) {
+            return parsed;
+        }
+        console.error(`[Socket] Invalid REVIT_MCP_PORT="${envPort}", using default ${DEFAULT_PORT}`);
+    }
+    return DEFAULT_PORT;
+}
+
 export class RevitSocketClient {
     private ws: WebSocket | null = null;
     private host: string = 'localhost';
-    private port: number = 8765;
-    private reconnectInterval: number = 5000; // 5 秒
+    private port: number = DEFAULT_PORT;
+    private reconnectInterval: number = 5000; // 5 seconds
     private responseHandlers: Map<string, (response: RevitResponse) => void> = new Map();
 
-    constructor(host: string = 'localhost', port: number = 8765) {
+    constructor(host: string = 'localhost', port?: number) {
         this.host = host;
-        this.port = port;
+        this.port = port ?? getConfiguredPort();
     }
 
     /**
-     * 連線到 Revit Plugin
+     * Connect to Revit Plugin
      */
     async connect(): Promise<void> {
         return new Promise((resolve, reject) => {
             const wsUrl = `ws://${this.host}:${this.port}`;
-            console.error(`[Socket] 連線至 Revit: ${wsUrl}`);
+            console.error(`[Socket] Connecting to Revit: ${wsUrl}`);
 
             this.ws = new WebSocket(wsUrl);
 
             this.ws.on('open', () => {
-                console.error('[Socket] 已連線至 Revit Plugin');
+                console.error('[Socket] Connected to Revit Plugin');
                 resolve();
             });
 
@@ -55,9 +70,9 @@ export class RevitSocketClient {
                         error: rawResponse.Error,
                         requestId: rawResponse.RequestId,
                     };
-                    console.error('[Socket] 收到回應:', response);
+                    console.error('[Socket] Received response:', response);
 
-                    // 處理回應
+                    // Handle Response
                     if (response.requestId) {
                         const handler = this.responseHandlers.get(response.requestId);
                         if (handler) {
@@ -66,43 +81,43 @@ export class RevitSocketClient {
                         }
                     }
                 } catch (error) {
-                    console.error('[Socket] 解析訊息失敗:', error);
+                    console.error('[Socket] Failed to parse message:', error);
                 }
             });
 
             this.ws.on('error', (error) => {
-                console.error('[Socket] WebSocket 錯誤:', error);
+                console.error('[Socket] WebSocket Error:', error);
                 reject(error);
             });
 
             this.ws.on('close', () => {
-                console.error('[Socket] 連線已關閉');
+                console.error('[Socket] Connection closed');
                 this.ws = null;
 
-                // 自動重連
+                // Reconnect logic
                 setTimeout(() => {
-                    console.error('[Socket] 嘗試重新連線...');
+                    console.error('[Socket] Attempting to reconnect...');
                     this.connect().catch(err => {
-                        console.error('[Socket] 重新連線失敗:', err);
+                        console.error('[Socket] Reconnection failed:', err);
                     });
                 }, this.reconnectInterval);
             });
 
-            // 連線逾時
+            // Connection Timeout
             setTimeout(() => {
                 if (this.ws?.readyState !== WebSocket.OPEN) {
-                    reject(new Error('連線逾時：請確認 Revit Plugin 是否已啟動並開啟 MCP 服務'));
+                    reject(new Error('Connection Timeout: Please ensure Revit Plugin is running and MCP server is enabled'));
                 }
             }, 10000);
         });
     }
 
     /**
-     * 發送命令到 Revit
+     * Send command to Revit
      */
     async sendCommand(commandName: string, parameters: Record<string, any> = {}): Promise<RevitResponse> {
         if (!this.isConnected()) {
-            throw new Error('未連線至 Revit Plugin');
+            throw new Error('Not connected to Revit Plugin');
         }
 
         const requestId = this.generateRequestId();
@@ -112,40 +127,40 @@ export class RevitSocketClient {
             RequestId: requestId,
         };
 
-        console.error(`[Socket] 發送命令: ${commandName}`, parameters);
+        console.error(`[Socket] Sending command: ${commandName}`, parameters);
 
         return new Promise((resolve, reject) => {
-            // 註冊回應處理器
+            // Register response handler
             this.responseHandlers.set(requestId, (response: RevitResponse) => {
                 if (response.success) {
                     resolve(response);
                 } else {
-                    reject(new Error(response.error || '命令執行失敗'));
+                    reject(new Error(response.error || 'Command failed'));
                 }
             });
 
-            // 發送命令
+            // Send command
             this.ws?.send(JSON.stringify(command));
 
-            // 設定逾時
+            // Request Timeout
             setTimeout(() => {
                 if (this.responseHandlers.has(requestId)) {
                     this.responseHandlers.delete(requestId);
-                    reject(new Error('命令執行逾時'));
+                    reject(new Error('Command timed out'));
                 }
-            }, 30000); // 30 秒逾時
+            }, 30000); // 30 seconds timeout
         });
     }
 
     /**
-     * 檢查連線狀態
+     * Check connection status
      */
     isConnected(): boolean {
         return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
     }
 
     /**
-     * 關閉連線
+     * Disconnect
      */
     disconnect(): void {
         if (this.ws) {
@@ -155,7 +170,7 @@ export class RevitSocketClient {
     }
 
     /**
-     * 生成唯一請求 ID
+     * Generate Request ID
      */
     private generateRequestId(): string {
         return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;

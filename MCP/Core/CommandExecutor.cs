@@ -3,16 +3,25 @@ using System.Collections.Generic;
 using System.Linq;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.DB.Architecture;
+using Autodesk.Revit.DB.Mechanical;
+using Autodesk.Revit.DB.Plumbing;
 using Autodesk.Revit.UI;
 using Newtonsoft.Json.Linq;
 using RevitMCP.Models;
+
+// Revit 2025+ ElementId: int → long
+#if REVIT2025_OR_GREATER
+using IdType = System.Int64;
+#else
+using IdType = System.Int32;
+#endif
 
 namespace RevitMCP.Core
 {
     /// <summary>
     /// 命令執行器 - 執行各種 Revit 操作
     /// </summary>
-    public class CommandExecutor
+    public partial class CommandExecutor
     {
         private readonly UIApplication _uiApp;
 
@@ -156,16 +165,40 @@ namespace RevitMCP.Core
                     case "create_dimension":
                         result = CreateDimension(parameters);
                         break;
-                    
+
+                    case "create_corridor_dimension":
+                        result = CreateCorridorDimension(parameters);
+                        break;
+
                     case "query_walls_by_location":
                         result = QueryWallsByLocation(parameters);
                         break;
                     
-                    case "query_elements":
-                        result = QueryElements(parameters);
-                        break;
+                                        case "query_elements":
                     
-                    case "override_element_graphics":
+                                            result = QueryElements(parameters);
+                    
+                                            break;
+                    
+                                        case "get_active_schema":
+                    
+                                            result = GetActiveSchema(parameters);
+                    
+                                            break;
+                    
+                                        case "get_category_fields":
+                    
+                                            result = GetCategoryFields(parameters);
+                    
+                                            break;
+                    
+                                        case "get_field_values":
+                    
+                                            result = GetFieldValues(parameters);
+                    
+                                            break;
+                    
+                                        case "override_element_graphics":
                         result = OverrideElementGraphics(parameters);
                         break;
                     
@@ -181,6 +214,77 @@ namespace RevitMCP.Core
                         result = RejoinWallJoins(parameters);
                         break;
                     
+                    case "check_exterior_wall_openings":
+                        result = CheckExteriorWallOpenings(parameters);
+                        break;
+
+                    case "get_room_daylight_info":
+                        result = GetRoomDaylightInfo(parameters);
+                        break;
+
+                    case "get_view_templates":
+                        result = GetViewTemplates(parameters);
+                        break;
+
+                    case "create_view_schedule":
+                        result = CreateViewSchedule(parameters);
+                        break;
+
+                    case "get_selected_elements":
+                        result = GetSelectedElements();
+                        break;
+
+                    case "get_connector_info":
+                        result = GetConnectorInfo(parameters);
+                        break;
+
+                    case "add_pipe_cap":
+                        result = AddPipeCap(parameters);
+                        break;
+
+                    // === 帷幕牆模組 (PR#11) ===
+                    case "get_curtain_wall_info":
+                        result = GetCurtainWallInfo(parameters);
+                        break;
+                    case "get_curtain_panel_types":
+                        result = GetCurtainPanelTypes(parameters);
+                        break;
+                    case "create_curtain_panel_type":
+                        result = CreateCurtainPanelType(parameters);
+                        break;
+                    case "apply_panel_pattern":
+                        result = ApplyPanelPattern(parameters);
+                        break;
+                    case "create_facade_panel":
+                        result = CreateFacadePanel(parameters);
+                        break;
+                    case "create_facade_from_analysis":
+                        result = CreateFacadeFromAnalysis(parameters);
+                        break;
+
+                    // === 排煙窗模組 (PR#12) ===
+                    case "check_smoke_exhaust_windows":
+                        result = CheckSmokeExhaustWindows(parameters);
+                        break;
+                    case "check_floor_effective_openings":
+                        result = CheckFloorEffectiveOpenings(parameters);
+                        break;
+                    case "create_section_view":
+                        result = CreateSectionView(parameters);
+                        break;
+                    case "create_detail_lines":
+                        result = CreateDetailLines(parameters);
+                        break;
+                    case "create_filled_region":
+                        result = CreateFilledRegion(parameters);
+                        break;
+                    case "create_text_note":
+                        result = CreateTextNote(parameters);
+                        break;
+                    case "export_smoke_review_excel":
+                        result = ExportSmokeReviewExcel(parameters);
+                        break;
+
                     default:
                         throw new NotImplementedException($"未實作的命令: {request.CommandName}");
                 }
@@ -254,8 +358,8 @@ namespace RevitMCP.Core
 
                 return new
                 {
-                    ElementId = wall.Id.IntegerValue,
-                    Message = $"成功建立牆，ID: {wall.Id.IntegerValue}"
+                    ElementId = wall.Id.GetIdValue(),
+                    Message = $"成功建立牆，ID: {wall.Id.GetIdValue()}"
                 };
             }
         }
@@ -294,7 +398,7 @@ namespace RevitMCP.Core
                 .OrderBy(l => l.Elevation)
                 .Select(l => new
                 {
-                    ElementId = l.Id.IntegerValue,
+                    ElementId = l.Id.GetIdValue(),
                     Name = l.Name,
                     Elevation = Math.Round(l.Elevation * 304.8, 2) // 轉換為公釐
                 })
@@ -313,7 +417,7 @@ namespace RevitMCP.Core
         private object GetElementInfo(JObject parameters)
         {
             Document doc = _uiApp.ActiveUIDocument.Document;
-            int elementId = parameters["elementId"]?.Value<int>() ?? 0;
+            IdType elementId = parameters["elementId"]?.Value<IdType>() ?? 0;
 
             Element element = doc.GetElement(new ElementId(elementId));
             if (element == null)
@@ -337,7 +441,7 @@ namespace RevitMCP.Core
 
             return new
             {
-                ElementId = element.Id.IntegerValue,
+                ElementId = element.Id.GetIdValue(),
                 Name = element.Name,
                 Category = element.Category?.Name,
                 Type = doc.GetElement(element.GetTypeId())?.Name,
@@ -352,7 +456,7 @@ namespace RevitMCP.Core
         private object DeleteElement(JObject parameters)
         {
             Document doc = _uiApp.ActiveUIDocument.Document;
-            int elementId = parameters["elementId"]?.Value<int>() ?? 0;
+            IdType elementId = parameters["elementId"]?.Value<IdType>() ?? 0;
 
             using (Transaction trans = new Transaction(doc, "刪除元素"))
             {
@@ -430,9 +534,9 @@ namespace RevitMCP.Core
 
                 return new
                 {
-                    ElementId = floor.Id.IntegerValue,
+                    ElementId = floor.Id.GetIdValue(),
                     Level = level.Name,
-                    Message = $"成功建立樓板，ID: {floor.Id.IntegerValue}"
+                    Message = $"成功建立樓板，ID: {floor.Id.GetIdValue()}"
                 };
             }
         }
@@ -444,7 +548,7 @@ namespace RevitMCP.Core
         private object ModifyElementParameter(JObject parameters)
         {
             Document doc = _uiApp.ActiveUIDocument.Document;
-            int elementId = parameters["elementId"]?.Value<int>() ?? 0;
+            IdType elementId = parameters["elementId"]?.Value<IdType>() ?? 0;
             string parameterName = parameters["parameterName"]?.Value<string>();
             string value = parameters["value"]?.Value<string>();
 
@@ -515,7 +619,7 @@ namespace RevitMCP.Core
         private object CreateDoor(JObject parameters)
         {
             Document doc = _uiApp.ActiveUIDocument.Document;
-            int wallId = parameters["wallId"]?.Value<int>() ?? 0;
+            IdType wallId = parameters["wallId"]?.Value<IdType>() ?? 0;
             double locationX = parameters["locationX"]?.Value<double>() ?? 0;
             double locationY = parameters["locationY"]?.Value<double>() ?? 0;
 
@@ -559,10 +663,10 @@ namespace RevitMCP.Core
 
                 return new
                 {
-                    ElementId = door.Id.IntegerValue,
+                    ElementId = door.Id.GetIdValue(),
                     DoorType = doorSymbol.Name,
                     WallId = wallId,
-                    Message = $"成功建立門，ID: {door.Id.IntegerValue}"
+                    Message = $"成功建立門，ID: {door.Id.GetIdValue()}"
                 };
             }
         }
@@ -573,7 +677,7 @@ namespace RevitMCP.Core
         private object CreateWindow(JObject parameters)
         {
             Document doc = _uiApp.ActiveUIDocument.Document;
-            int wallId = parameters["wallId"]?.Value<int>() ?? 0;
+            IdType wallId = parameters["wallId"]?.Value<IdType>() ?? 0;
             double locationX = parameters["locationX"]?.Value<double>() ?? 0;
             double locationY = parameters["locationY"]?.Value<double>() ?? 0;
 
@@ -617,10 +721,10 @@ namespace RevitMCP.Core
 
                 return new
                 {
-                    ElementId = window.Id.IntegerValue,
+                    ElementId = window.Id.GetIdValue(),
                     WindowType = windowSymbol.Name,
                     WallId = wallId,
-                    Message = $"成功建立窗，ID: {window.Id.IntegerValue}"
+                    Message = $"成功建立窗，ID: {window.Id.GetIdValue()}"
                 };
             }
         }
@@ -649,7 +753,7 @@ namespace RevitMCP.Core
 
                     return new
                     {
-                        ElementId = g.Id.IntegerValue,
+                        ElementId = g.Id.GetIdValue(),
                         Name = g.Name,
                         Direction = direction,
                         StartX = Math.Round(startPoint.X * 304.8, 2),  // 英尺 → 公釐
@@ -681,8 +785,8 @@ namespace RevitMCP.Core
                 .OfClass(typeof(FamilySymbol))
                 .Cast<FamilySymbol>()
                 .Where(fs => fs.Category != null && 
-                    (fs.Category.Id.IntegerValue == (int)BuiltInCategory.OST_Columns ||
-                     fs.Category.Id.IntegerValue == (int)BuiltInCategory.OST_StructuralColumns))
+                    (fs.Category.Id.GetIdValue() == (IdType)BuiltInCategory.OST_Columns ||
+                     fs.Category.Id.GetIdValue() == (IdType)BuiltInCategory.OST_StructuralColumns))
                 .Select(fs =>
                 {
                     // 嘗試取得尺寸參數
@@ -703,7 +807,7 @@ namespace RevitMCP.Core
 
                     return new
                     {
-                        ElementId = fs.Id.IntegerValue,
+                        ElementId = fs.Id.GetIdValue(),
                         TypeName = fs.Name,
                         FamilyName = fs.FamilyName,
                         Category = fs.Category?.Name,
@@ -755,8 +859,8 @@ namespace RevitMCP.Core
                     .OfClass(typeof(FamilySymbol))
                     .Cast<FamilySymbol>()
                     .Where(fs => fs.Category != null &&
-                        (fs.Category.Id.IntegerValue == (int)BuiltInCategory.OST_Columns ||
-                         fs.Category.Id.IntegerValue == (int)BuiltInCategory.OST_StructuralColumns))
+                        (fs.Category.Id.GetIdValue() == (IdType)BuiltInCategory.OST_Columns ||
+                         fs.Category.Id.GetIdValue() == (IdType)BuiltInCategory.OST_StructuralColumns))
                     .FirstOrDefault(fs => string.IsNullOrEmpty(columnTypeName) || 
                                           fs.Name == columnTypeName ||
                                           fs.FamilyName.Contains(columnTypeName));
@@ -805,13 +909,13 @@ namespace RevitMCP.Core
 
                 return new
                 {
-                    ElementId = column.Id.IntegerValue,
+                    ElementId = column.Id.GetIdValue(),
                     ColumnType = columnSymbol.Name,
                     FamilyName = columnSymbol.FamilyName,
                     Level = bottomLevel.Name,
                     LocationX = x,
                     LocationY = y,
-                    Message = $"成功建立柱子，ID: {column.Id.IntegerValue}"
+                    Message = $"成功建立柱子，ID: {column.Id.GetIdValue()}"
                 };
             }
         }
@@ -830,7 +934,7 @@ namespace RevitMCP.Core
                 .Cast<FamilySymbol>()
                 .Select(fs => new
                 {
-                    ElementId = fs.Id.IntegerValue,
+                    ElementId = fs.Id.GetIdValue(),
                     TypeName = fs.Name,
                     FamilyName = fs.FamilyName,
                     IsActive = fs.IsActive
@@ -911,14 +1015,14 @@ namespace RevitMCP.Core
 
                 return new
                 {
-                    ElementId = furniture.Id.IntegerValue,
+                    ElementId = furniture.Id.GetIdValue(),
                     FurnitureType = furnitureSymbol.Name,
                     FamilyName = furnitureSymbol.FamilyName,
                     Level = level.Name,
                     LocationX = x,
                     LocationY = y,
                     Rotation = rotation,
-                    Message = $"成功放置家具，ID: {furniture.Id.IntegerValue}"
+                    Message = $"成功放置家具，ID: {furniture.Id.GetIdValue()}"
                 };
             }
         }
@@ -929,7 +1033,7 @@ namespace RevitMCP.Core
         private object GetRoomInfo(JObject parameters)
         {
             Document doc = _uiApp.ActiveUIDocument.Document;
-            int? roomId = parameters["roomId"]?.Value<int>();
+            IdType? roomId = parameters["roomId"]?.Value<IdType>();
             string roomName = parameters["roomName"]?.Value<string>();
 
             Room room = null;
@@ -967,7 +1071,7 @@ namespace RevitMCP.Core
 
             return new
             {
-                ElementId = room.Id.IntegerValue,
+                ElementId = room.Id.GetIdValue(),
                 Name = room.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString(),
                 Number = room.Number,
                 Level = doc.GetElement(room.LevelId)?.Name,
@@ -1022,7 +1126,7 @@ namespace RevitMCP.Core
                     
                     return new
                     {
-                        ElementId = r.Id.IntegerValue,
+                        ElementId = r.Id.GetIdValue(),
                         Name = roomName ?? "未命名",
                         Number = r.Number,
                         Area = Math.Round(areaM2, 2),
@@ -1043,7 +1147,7 @@ namespace RevitMCP.Core
             return new
             {
                 Level = targetLevel.Name,
-                LevelId = targetLevel.Id.IntegerValue,
+                LevelId = targetLevel.Id.GetIdValue(),
                 TotalRooms = rooms.Count,
                 TotalArea = Math.Round(totalArea, 2),
                 RoomsWithName = roomsWithName,
@@ -1053,6 +1157,268 @@ namespace RevitMCP.Core
                     : "N/A",
                 Rooms = rooms
             };
+        }
+
+        /// <summary>
+        /// 取得房間採光資訊
+        /// </summary>
+        private object GetRoomDaylightInfo(JObject parameters)
+        {
+            Document doc = _uiApp.ActiveUIDocument.Document;
+            string levelName = parameters["level"]?.Value<string>();
+
+            IEnumerable<Room> rooms;
+            if (!string.IsNullOrEmpty(levelName))
+            {
+                Level level = FindLevel(doc, levelName, false);
+                rooms = new FilteredElementCollector(doc)
+                    .OfCategory(BuiltInCategory.OST_Rooms)
+                    .WhereElementIsNotElementType()
+                    .Cast<Room>()
+                    .Where(r => r.LevelId == level.Id && r.Area > 0);
+            }
+            else
+            {
+                rooms = new FilteredElementCollector(doc)
+                    .OfCategory(BuiltInCategory.OST_Rooms)
+                    .WhereElementIsNotElementType()
+                    .Cast<Room>()
+                    .Where(r => r.Area > 0);
+            }
+
+
+            // 預先取得所有 Room Tags 並建立對照表 (RoomId -> List<TagId>)
+            // 預先取得所有 Room Tags 並建立對照表 (RoomId -> List<TagId>)
+            // 預先取得所有 Room Tags 並建立對照表 (RoomId -> List<TagId>)
+            var roomTagCollector = new FilteredElementCollector(doc)
+                .OfClass(typeof(SpatialElementTag))
+                .WhereElementIsNotElementType()
+                .Where(e => e is RoomTag)
+                .Cast<RoomTag>();
+
+            var roomTagMap = new Dictionary<IdType, List<IdType>>();
+            foreach (var tag in roomTagCollector)
+            {
+                // 注意：Tag 可能沒有關聯的 Room (Orphaned)
+                try {
+                    // Tag.Room 屬性在某些視圖可能無效，或需用 Tag.IsOrphaned
+                    if (tag.Room != null) 
+                    {
+                        IdType roomId = tag.Room.Id.GetIdValue();
+                        if (!roomTagMap.ContainsKey(roomId))
+                        {
+                            roomTagMap[roomId] = new List<IdType>();
+                        }
+                        roomTagMap[roomId].Add(tag.Id.GetIdValue());
+                    }
+                } catch {}
+            }
+
+            var roomData = new List<object>();
+            SpatialElementBoundaryOptions options = new SpatialElementBoundaryOptions();
+            var globalProcessedIds = new HashSet<IdType>();
+
+            foreach (Room room in rooms)
+            {
+                var openings = new List<object>();
+
+                IList<IList<BoundarySegment>> segments = room.GetBoundarySegments(options);
+                if (segments != null)
+                {
+                    foreach (IList<BoundarySegment> segmentList in segments)
+                    {
+                        foreach (BoundarySegment segment in segmentList)
+                        {
+                            Element element = doc.GetElement(segment.ElementId);
+                            if (element is Wall wall)
+                            {
+                                IList<ElementId> insertIds = wall.FindInserts(true, false, false, false);
+                                foreach (ElementId insertId in insertIds)
+                                {
+                                    if (globalProcessedIds.Contains(insertId.GetIdValue())) continue;
+
+                                    Element insert = doc.GetElement(insertId);
+                                    if (insert is FamilyInstance fi &&
+                                        (fi.Category.Id.GetIdValue() == (IdType)BuiltInCategory.OST_Windows))
+                                    {
+                                        bool belongsToRoom = false;
+
+                                        // Geometric check: is the window within this boundary segment's range?
+                                        if (wall.Location is LocationCurve wallLocCurve && insert.Location is LocationPoint insertLoc)
+                                        {
+                                            Curve wallCurve = wallLocCurve.Curve;
+                                            Curve segmentCurve = segment.GetCurve();
+
+                                            IntersectionResult resStart = wallCurve.Project(segmentCurve.GetEndPoint(0));
+                                            IntersectionResult resEnd = wallCurve.Project(segmentCurve.GetEndPoint(1));
+
+                                            if (resStart != null && resEnd != null)
+                                            {
+                                                double tMin = Math.Min(resStart.Parameter, resEnd.Parameter);
+                                                double tMax = Math.Max(resStart.Parameter, resEnd.Parameter);
+
+                                                IntersectionResult resWindow = wallCurve.Project(insertLoc.Point);
+                                                if (resWindow != null)
+                                                {
+                                                    double tWindow = resWindow.Parameter;
+                                                    // 500mm tolerance to catch windows near segment boundaries
+                                                    double tol = 500.0 / 304.8;
+                                                    if (tWindow >= tMin - tol && tWindow <= tMax + tol)
+                                                    {
+                                                        belongsToRoom = true;
+                                                    }
+                                                }
+                                            }
+                                            else
+                                            {
+                                                // Fallback: projection failed, use Room API
+                                                if (fi.FromRoom != null && fi.FromRoom.Id == room.Id) belongsToRoom = true;
+                                                else if (fi.ToRoom != null && fi.ToRoom.Id == room.Id) belongsToRoom = true;
+                                            }
+                                        }
+                                        else
+                                        {
+                                            // Non-curve wall fallback
+                                            if (fi.FromRoom != null && fi.FromRoom.Id == room.Id) belongsToRoom = true;
+                                            else if (fi.ToRoom != null && fi.ToRoom.Id == room.Id) belongsToRoom = true;
+                                        }
+
+                                        if (!belongsToRoom) continue;
+                                        globalProcessedIds.Add(insertId.GetIdValue());
+
+                                        bool isExterior = wall.WallType.Function == WallFunction.Exterior;
+
+                                        const double FEET_TO_MM = 304.8;
+                                        Element symbol = fi.Symbol;
+
+                                        BuiltInParameter[] widthBips = new BuiltInParameter[] { BuiltInParameter.FAMILY_WIDTH_PARAM, BuiltInParameter.WINDOW_WIDTH };
+                                        string[] widthNames = new string[] { "粗略寬度", "寬度", "Width", "寬" };
+
+                                        BuiltInParameter[] heightBips = new BuiltInParameter[] { BuiltInParameter.FAMILY_HEIGHT_PARAM, BuiltInParameter.WINDOW_HEIGHT };
+                                        string[] heightNames = new string[] { "粗略高度", "高度", "Height", "高" };
+
+                                        BuiltInParameter[] sillBips = new BuiltInParameter[] { BuiltInParameter.INSTANCE_SILL_HEIGHT_PARAM };
+                                        string[] sillNames = new string[] { "窗台高度", "Sill Height", "底高度", "窗臺高度" };
+
+                                        BuiltInParameter[] headBips = new BuiltInParameter[] { BuiltInParameter.INSTANCE_HEAD_HEIGHT_PARAM };
+                                        string[] headNames = new string[] { "窗頂高度", "Head Height", "頂高度" };
+
+                                        double? wVal = GetParamValue(fi, widthBips, widthNames);
+                                        if (wVal == null || wVal == 0)
+                                        {
+                                            wVal = GetParamValue(symbol, widthBips, widthNames);
+                                        }
+                                        double widthRaw = wVal ?? 0;
+                                        double width = widthRaw * FEET_TO_MM;
+
+                                        double? hVal = GetParamValue(fi, heightBips, heightNames);
+                                        if (hVal == null || hVal == 0)
+                                        {
+                                            hVal = GetParamValue(symbol, heightBips, heightNames);
+                                        }
+                                        double heightRaw = hVal ?? 0;
+                                        double height = heightRaw * FEET_TO_MM;
+
+                                        double sillHeightRaw = GetParamValue(fi, sillBips, sillNames) ?? 0;
+                                        double sillHeight = sillHeightRaw * FEET_TO_MM;
+
+                                        double headHeightRaw = GetParamValue(fi, headBips, headNames) ?? (sillHeightRaw + heightRaw);
+                                        double headHeight = headHeightRaw * FEET_TO_MM;
+
+                                        openings.Add(new
+                                        {
+                                            Id = insert.Id.GetIdValue(),
+                                            Name = insert.Name,
+                                            FamilyName = fi.Symbol.FamilyName,
+                                            Category = insert.Category.Name,
+                                            Width = Math.Round(width, 2),
+                                            Height = Math.Round(height, 2),
+                                            SillHeight = Math.Round(sillHeight, 2),
+                                            HeadHeight = Math.Round(headHeight, 2),
+                                            IsExterior = isExterior,
+                                            HostWallId = wall.Id.GetIdValue()
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                // 取得房間標籤 ID
+                List<IdType> tagIds = new List<IdType>();
+                if (roomTagMap.ContainsKey(room.Id.GetIdValue()))
+                {
+                    tagIds = roomTagMap[room.Id.GetIdValue()];
+                }
+
+                roomData.Add(new
+                {
+                    ElementId = room.Id.GetIdValue(),
+                    Name = room.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString() ?? "未命名",
+                    Number = room.Number,
+                    Level = doc.GetElement(room.LevelId)?.Name,
+                    Area = Math.Round(room.Area * 0.092903, 2),
+                    Openings = openings,
+                    TagIds = tagIds
+                });
+            }
+
+            return new
+            {
+                Count = roomData.Count,
+                Rooms = roomData
+            };
+        }
+
+        private double? GetParamDouble(Element e, BuiltInParameter bip)
+        {
+            Parameter p = e.get_Parameter(bip);
+            if (p != null && (p.StorageType == StorageType.Double)) return p.AsDouble();
+            return null;
+        }
+
+        private double? GetParamValue(Element e, BuiltInParameter[] bips, string[] names)
+        {
+            if (e == null) return null;
+            
+            foreach (BuiltInParameter bip in bips)
+            {
+                var val = GetParamDouble(e, bip);
+                if (val.HasValue)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Found via BIP: {bip} = {val}");
+                    return val;
+                }
+            }
+            
+            foreach (var name in names)
+            {
+                Parameter p = e.LookupParameter(name);
+                if (p != null && p.StorageType == StorageType.Double)
+                {
+                    System.Diagnostics.Debug.WriteLine($"Found via Name: {name} = {p.AsDouble()}");
+                    return p.AsDouble();
+                }
+            }
+            
+            // Fallback: iterate all parameters to find by name match
+            foreach (Parameter param in e.Parameters)
+            {
+                if (param.StorageType != StorageType.Double) continue;
+                
+                string paramName = param.Definition.Name;
+                foreach (var name in names)
+                {
+                    if (paramName == name)
+                    {
+                        System.Diagnostics.Debug.WriteLine($"Found via iteration: {paramName} = {param.AsDouble()}");
+                        return param.AsDouble();
+                    }
+                }
+            }
+            
+            return null;
         }
 
         /// <summary>
@@ -1078,7 +1444,7 @@ namespace RevitMCP.Core
 
                     return new
                     {
-                        ElementId = v.Id.IntegerValue,
+                        ElementId = v.Id.GetIdValue(),
                         Name = v.Name,
                         ViewType = v.ViewType.ToString(),
                         LevelName = levelName,
@@ -1116,7 +1482,7 @@ namespace RevitMCP.Core
 
             return new
             {
-                ElementId = activeView.Id.IntegerValue,
+                ElementId = activeView.Id.GetIdValue(),
                 Name = activeView.Name,
                 ViewType = activeView.ViewType.ToString(),
                 LevelName = levelName,
@@ -1129,7 +1495,7 @@ namespace RevitMCP.Core
         /// </summary>
         private object SetActiveView(JObject parameters)
         {
-            int viewId = parameters["viewId"]?.Value<int>() ?? 0;
+            IdType viewId = parameters["viewId"]?.Value<IdType>() ?? 0;
             Document doc = _uiApp.ActiveUIDocument.Document;
 
             View view = doc.GetElement(new ElementId(viewId)) as View;
@@ -1159,7 +1525,7 @@ namespace RevitMCP.Core
             // 支援單一 ID
             if (parameters.ContainsKey("elementId"))
             {
-                int id = parameters["elementId"].Value<int>();
+                IdType id = parameters["elementId"].Value<IdType>();
                 if (id > 0) elementIds.Add(new ElementId(id));
             }
 
@@ -1196,7 +1562,7 @@ namespace RevitMCP.Core
         /// </summary>
         private object ZoomToElement(JObject parameters)
         {
-            int elementId = parameters["elementId"]?.Value<int>() ?? 0;
+            IdType elementId = parameters["elementId"]?.Value<IdType>() ?? 0;
             Document doc = _uiApp.ActiveUIDocument.Document;
 
             Element element = doc.GetElement(new ElementId(elementId));
@@ -1251,7 +1617,7 @@ namespace RevitMCP.Core
         /// </summary>
         private object GetWallInfo(JObject parameters)
         {
-            int wallId = parameters["wallId"]?.Value<int>() ?? 0;
+            IdType wallId = parameters["wallId"]?.Value<IdType>() ?? 0;
             Document doc = _uiApp.ActiveUIDocument.Document;
 
             Wall wall = doc.GetElement(new ElementId(wallId)) as Wall;
@@ -1300,7 +1666,7 @@ namespace RevitMCP.Core
         {
             Document doc = _uiApp.ActiveUIDocument.Document;
             
-            int viewId = parameters["viewId"]?.Value<int>() ?? 0;
+            IdType viewId = parameters["viewId"]?.Value<IdType>() ?? 0;
             double startX = parameters["startX"]?.Value<double>() ?? 0;
             double startY = parameters["startY"]?.Value<double>() ?? 0;
             double endX = parameters["endX"]?.Value<double>() ?? 0;
@@ -1365,7 +1731,7 @@ namespace RevitMCP.Core
 
                 return new
                 {
-                    DimensionId = dim.Id.IntegerValue,
+                    DimensionId = dim.Id.GetIdValue(),
                     Value = Math.Round(dimValue, 2),
                     Unit = "mm",
                     ViewId = viewId,
@@ -1373,6 +1739,190 @@ namespace RevitMCP.Core
                     Message = $"成功建立尺寸標註: {Math.Round(dimValue, 0)} mm"
                 };
             }
+        }
+
+        /// <summary>
+        /// 走廊寬度標註 — 使用房間邊界線段找平行牆對，建立精確的牆到牆標註
+        /// </summary>
+        private object CreateCorridorDimension(JObject parameters)
+        {
+            Document doc = _uiApp.ActiveUIDocument.Document;
+            IdType roomId = parameters["roomId"]?.Value<IdType>() ?? 0;
+            IdType viewId = parameters["viewId"]?.Value<IdType>() ?? 0;
+
+            Room room = doc.GetElement(new ElementId(roomId)) as Room;
+            if (room == null) throw new Exception($"找不到房間 ID: {roomId}");
+
+            View view = doc.GetElement(new ElementId(viewId)) as View;
+            if (view == null) throw new Exception($"找不到視圖 ID: {viewId}");
+
+            // 取得房間邊界線段（使用完成面位置）
+            var bOptions = new SpatialElementBoundaryOptions();
+            bOptions.SpatialElementBoundaryLocation = SpatialElementBoundaryLocation.Finish;
+            var segmentLoops = room.GetBoundarySegments(bOptions);
+
+            if (segmentLoops == null || segmentLoops.Count == 0)
+                throw new Exception("房間無邊界線段");
+
+            // 從第一個迴路提取直線段
+            var lines = new List<Line>();
+            foreach (var seg in segmentLoops[0])
+            {
+                var curve = seg.GetCurve();
+                if (curve is Line line && line.Length > 0.3) // > ~90mm
+                    lines.Add(line);
+            }
+
+            if (lines.Count < 2)
+                throw new Exception($"邊界線段不足（僅 {lines.Count} 條直線）");
+
+            // Segment-First 演算法：找平行牆對
+            var pairs = new List<int[]>();
+            var pairWidths = new List<double>();
+            var pairAvgLens = new List<double>();
+
+            for (int i = 0; i < lines.Count; i++)
+            {
+                XYZ dir1 = lines[i].Direction.Normalize();
+                double len1 = lines[i].Length;
+
+                for (int j = i + 1; j < lines.Count; j++)
+                {
+                    XYZ dir2 = lines[j].Direction.Normalize();
+                    double len2 = lines[j].Length;
+
+                    // 平行檢查（容差 5°）
+                    double dot = Math.Abs(dir1.DotProduct(dir2));
+                    if (dot < 0.996) continue;
+
+                    // 計算垂直距離
+                    XYZ perp = new XYZ(-dir1.Y, dir1.X, 0).Normalize();
+                    XYZ diff = lines[j].GetEndPoint(0).Subtract(lines[i].GetEndPoint(0));
+                    double dist = Math.Abs(diff.DotProduct(perp));
+
+                    // 排除共線（同一側牆壁 < 100mm）
+                    if (dist < 100.0 / 304.8) continue;
+
+                    // 長寬比過濾（走廊特徵：長 > 寬）
+                    double avgLen = (len1 + len2) / 2;
+                    if (avgLen < dist) continue;
+
+                    // 投影重疊檢查
+                    double s1a = lines[i].GetEndPoint(0).DotProduct(dir1);
+                    double s1b = lines[i].GetEndPoint(1).DotProduct(dir1);
+                    double s2a = lines[j].GetEndPoint(0).DotProduct(dir1);
+                    double s2b = lines[j].GetEndPoint(1).DotProduct(dir1);
+
+                    double min1 = Math.Min(s1a, s1b), max1 = Math.Max(s1a, s1b);
+                    double min2 = Math.Min(s2a, s2b), max2 = Math.Max(s2a, s2b);
+                    double oStart = Math.Max(min1, min2);
+                    double oEnd = Math.Min(max1, max2);
+                    if (oEnd <= oStart + 0.01) continue; // 無重疊
+
+                    pairs.Add(new[] { i, j });
+                    pairWidths.Add(dist);
+                    pairAvgLens.Add(avgLen);
+                }
+            }
+
+            if (pairs.Count == 0)
+                throw new Exception("找不到平行牆面對（可能不是走廊形狀）");
+
+            // 依平均長度降序排序（主要走廊壁優先）
+            var sorted = Enumerable.Range(0, pairs.Count)
+                .OrderByDescending(k => pairAvgLens[k])
+                .ToList();
+
+            // 建立標註
+            var measurements = new List<object>();
+            var widthValues = new List<double>();
+
+            using (Transaction trans = new Transaction(doc, "走廊寬度標註"))
+            {
+                trans.Start();
+
+                foreach (int k in sorted)
+                {
+                    var line1 = lines[pairs[k][0]];
+                    var line2 = lines[pairs[k][1]];
+                    XYZ dir = line1.Direction.Normalize();
+                    XYZ perp = new XYZ(-dir.Y, dir.X, 0).Normalize();
+
+                    // 投影重疊中點
+                    double s1a = line1.GetEndPoint(0).DotProduct(dir);
+                    double s1b = line1.GetEndPoint(1).DotProduct(dir);
+                    double s2a = line2.GetEndPoint(0).DotProduct(dir);
+                    double s2b = line2.GetEndPoint(1).DotProduct(dir);
+
+                    double min1 = Math.Min(s1a, s1b), max1 = Math.Max(s1a, s1b);
+                    double min2 = Math.Min(s2a, s2b), max2 = Math.Max(s2a, s2b);
+                    double oMid = (Math.Max(min1, min2) + Math.Min(max1, max2)) / 2;
+
+                    // 在重疊中點處取兩牆面上的點
+                    double t1 = (s1b != s1a) ? (oMid - s1a) / (s1b - s1a) : 0.5;
+                    double t2 = (s2b != s2a) ? (oMid - s2a) / (s2b - s2a) : 0.5;
+                    t1 = Math.Max(0.01, Math.Min(0.99, t1));
+                    t2 = Math.Max(0.01, Math.Min(0.99, t2));
+
+                    XYZ p1 = line1.Evaluate(t1, true);
+                    XYZ p2 = line2.Evaluate(t2, true);
+
+                    // 建立詳圖線作為標註參考（沿走廊方向的短線）
+                    double tickLen = 0.5; // ~150mm
+                    DetailCurve dc1 = doc.Create.NewDetailCurve(view,
+                        Line.CreateBound(p1.Subtract(dir.Multiply(tickLen)), p1.Add(dir.Multiply(tickLen))));
+                    DetailCurve dc2 = doc.Create.NewDetailCurve(view,
+                        Line.CreateBound(p2.Subtract(dir.Multiply(tickLen)), p2.Add(dir.Multiply(tickLen))));
+
+                    // 標註線（連接兩牆面，沿走廊方向偏移）
+                    double offsetFt = 1.5; // ~450mm 偏移
+                    Line dimLine = Line.CreateBound(
+                        p1.Add(dir.Multiply(offsetFt)),
+                        p2.Add(dir.Multiply(offsetFt)));
+
+                    ReferenceArray refArray = new ReferenceArray();
+                    refArray.Append(dc1.GeometryCurve.Reference);
+                    refArray.Append(dc2.GeometryCurve.Reference);
+
+                    Dimension dim = doc.Create.NewDimension(view, dimLine, refArray);
+
+                    double widthMm = dim.Value.HasValue ? dim.Value.Value * 304.8 : pairWidths[k] * 304.8;
+                    widthMm = Math.Round(widthMm, 0);
+                    widthValues.Add(widthMm);
+
+                    measurements.Add(new
+                    {
+                        SegmentIndex = measurements.Count + 1,
+                        Width = widthMm,
+                        Length = Math.Round(pairAvgLens[k] * 304.8, 0),
+                        DimensionId = dim.Id.GetIdValue(),
+                        Point1 = new { X = Math.Round(p1.X * 304.8, 0), Y = Math.Round(p1.Y * 304.8, 0) },
+                        Point2 = new { X = Math.Round(p2.X * 304.8, 0), Y = Math.Round(p2.Y * 304.8, 0) },
+                        Method = "boundary_accurate",
+                        Compliant_1600 = widthMm >= 1600,
+                        Compliant_1200 = widthMm >= 1200
+                    });
+                }
+
+                trans.Commit();
+            }
+
+            string roomName = room.get_Parameter(BuiltInParameter.ROOM_NAME)?.AsString() ?? "";
+            string roomNumber = room.get_Parameter(BuiltInParameter.ROOM_NUMBER)?.AsString() ?? "";
+            double minWidth = widthValues.Count > 0 ? widthValues.Min() : 0;
+
+            return new
+            {
+                RoomId = roomId,
+                RoomName = roomName,
+                RoomNumber = roomNumber,
+                Level = room.Level?.Name ?? "",
+                TotalSegments = measurements.Count,
+                MinWidth = minWidth,
+                AllPass_1600 = widthValues.All(w => w >= 1600),
+                AllPass_1200 = widthValues.All(w => w >= 1200),
+                Segments = measurements
+            };
         }
 
         /// <summary>
@@ -1453,7 +2003,7 @@ namespace RevitMCP.Core
 
                     nearbyWalls.Add(new
                     {
-                        ElementId = wall.Id.IntegerValue,
+                        ElementId = wall.Id.GetIdValue(),
                         Name = wall.Name,
                         WallType = wall.WallType.Name,
                         Thickness = Math.Round(thickness, 2),
@@ -1503,104 +2053,381 @@ namespace RevitMCP.Core
 
 
         /// <summary>
-        /// 查詢視圖中的元素
+        /// 查詢視圖中的元素 (增強版)
         /// </summary>
         private object QueryElements(JObject parameters)
         {
             try
             {
                 string categoryName = parameters["category"]?.Value<string>();
-                int? viewId = parameters["viewId"]?.Value<int>();
+                IdType? viewId = parameters["viewId"]?.Value<IdType>();
                 int maxCount = parameters["maxCount"]?.Value<int>() ?? 100;
-                
-                Document doc = _uiApp.ActiveUIDocument.Document;
-                
+                JArray filters = parameters["filters"] as JArray;
+                JArray returnFields = parameters["returnFields"] as JArray;
+
+                // 相容簡易版 query_elements 的 family / type / level 參數
+                string familyFilter = parameters["family"]?.Value<string>();
+                string typeFilter = parameters["type"]?.Value<string>();
+                string levelFilter = parameters["level"]?.Value<string>();
+
                 if (string.IsNullOrEmpty(categoryName))
                 {
-                    throw new Exception("必須提供 category 參數");
+                    throw new Exception("必須提供 category 參數（例如：Walls, Rooms, Doors, Windows）");
                 }
+
+                Document doc = _uiApp.ActiveUIDocument.Document;
                 
-                // 決定查詢範圍: 指定視圖 或 目前視圖
-                ElementId targetViewId = viewId.HasValue ? new ElementId(viewId.Value) : doc.ActiveView.Id;
-                
-                FilteredElementCollector collector = new FilteredElementCollector(doc, targetViewId);
-                
-                // 嘗試解析 BuiltInCategory
-                BuiltInCategory category = BuiltInCategory.INVALID;
-                bool isBuiltIn = Enum.TryParse("OST_" + categoryName, true, out category) || 
-                                 Enum.TryParse(categoryName, true, out category);
-                
-                List<Element> elements = new List<Element>();
-                
-                if (isBuiltIn && category != BuiltInCategory.INVALID)
+                // 使用全文件收集器（避免限定在不適當的 View 導致結果為空）
+                FilteredElementCollector collector;
+                if (viewId.HasValue)
                 {
-                    elements = collector.OfCategory(category).ToElements().ToList();
+                    collector = new FilteredElementCollector(doc, new ElementId(viewId.Value));
                 }
                 else
                 {
-                    // 嘗試用 Class 查詢
-                    if (categoryName.Equals("Dimensions", StringComparison.OrdinalIgnoreCase))
-                    {
-                        elements = collector.OfClass(typeof(Dimension)).ToElements().ToList();
-                    }
-                    else if (categoryName.Equals("Walls", StringComparison.OrdinalIgnoreCase))
-                    {
-                        elements = collector.OfClass(typeof(Wall)).ToElements().ToList();
-                    }
-                    else if (categoryName.Equals("Rooms", StringComparison.OrdinalIgnoreCase))
-                    {
-                        elements = collector.OfCategory(BuiltInCategory.OST_Rooms).ToElements().ToList();
-                    }
-                    else if (categoryName.Equals("StructuralColumns", StringComparison.OrdinalIgnoreCase))
-                    {
-                        elements = collector.OfCategory(BuiltInCategory.OST_StructuralColumns).ToElements().ToList();
-                    }
-                    else if (categoryName.Equals("Columns", StringComparison.OrdinalIgnoreCase))
-                    {
-                        elements = collector.OfCategory(BuiltInCategory.OST_Columns).ToElements().ToList();
-                    }
-                    else
-                    {
-                        throw new Exception($"不支援的類別: {categoryName}");
-                    }
+                    collector = new FilteredElementCollector(doc);
                 }
-                
-                // 提取基本資訊
-                var resultList = elements.Take(maxCount).Select(elem =>
+
+                // 1. 品類過濾
+                ElementId catId = ResolveCategoryId(doc, categoryName);
+                if (catId != ElementId.InvalidElementId)
+                {
+                    collector.OfCategoryId(catId);
+                }
+                else
+                {
+                    // 備用方案: 根據常用名稱
+                    string catLower = categoryName.ToLowerInvariant();
+                    if (catLower == "walls" || catLower == "牆") collector.OfClass(typeof(Wall));
+                    else if (catLower == "rooms" || catLower == "房間") collector.OfCategory(BuiltInCategory.OST_Rooms);
+                    else if (catLower == "doors" || catLower == "門") collector.OfCategory(BuiltInCategory.OST_Doors);
+                    else if (catLower == "windows" || catLower == "窗") collector.OfCategory(BuiltInCategory.OST_Windows);
+                    else if (catLower == "floors" || catLower == "樓板") collector.OfCategory(BuiltInCategory.OST_Floors);
+                    else if (catLower == "columns" || catLower == "柱") collector.OfCategory(BuiltInCategory.OST_Columns);
+                    else throw new Exception($"無法辨識品類: {categoryName}。請使用英文名稱如 Walls, Rooms, Doors, Windows, Floors, Columns");
+                }
+
+                var elements = collector.WhereElementIsNotElementType().ToElements();
+                var filteredList = new List<Element>();
+
+                // 2. 執行過濾邏輯
+                foreach (var elem in elements)
+                {
+                    bool match = true;
+
+                    // 進階版 filters 過濾
+                    if (filters != null)
+                    {
+                        foreach (var filter in filters)
+                        {
+                            string field = filter["field"]?.Value<string>();
+                            string op = filter["operator"]?.Value<string>();
+                            string targetValue = filter["value"]?.Value<string>();
+                            
+                            if (!CheckFilterMatch(elem, field, op, targetValue))
+                            {
+                                match = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    // 簡易版 family 過濾
+                    if (match && !string.IsNullOrEmpty(familyFilter))
+                    {
+                        string elemFamily = elem.get_Parameter(BuiltInParameter.ELEM_FAMILY_PARAM)?.AsValueString() ?? "";
+                        if (!elemFamily.IndexOf(familyFilter, StringComparison.OrdinalIgnoreCase).Equals(0) 
+                            && !elemFamily.Contains(familyFilter))
+                            match = false;
+                    }
+
+                    // 簡易版 type 過濾
+                    if (match && !string.IsNullOrEmpty(typeFilter))
+                    {
+                        string elemType = elem.get_Parameter(BuiltInParameter.ELEM_TYPE_PARAM)?.AsValueString() ?? "";
+                        if (!elemType.IndexOf(typeFilter, StringComparison.OrdinalIgnoreCase).Equals(0)
+                            && !elemType.Contains(typeFilter))
+                            match = false;
+                    }
+
+                    // 簡易版 level 過濾
+                    if (match && !string.IsNullOrEmpty(levelFilter))
+                    {
+                        string elemLevel = elem.get_Parameter(BuiltInParameter.LEVEL_NAME)?.AsValueString() 
+                                        ?? elem.get_Parameter(BuiltInParameter.INSTANCE_SCHEDULE_ONLY_LEVEL_PARAM)?.AsValueString()
+                                        ?? "";
+                        if (!elemLevel.Contains(levelFilter))
+                            match = false;
+                    }
+
+                    if (match) filteredList.Add(elem);
+                    if (filteredList.Count >= maxCount) break;
+                }
+
+                // 3. 準備回傳欄位
+                var resultList = filteredList.Select(elem =>
                 {
                     var item = new Dictionary<string, object>
                     {
-                        { "ElementId", elem.Id.IntegerValue },
-                        { "Name", elem.Name ?? "" },
-                        { "Category", elem.Category?.Name ?? "" }
+                        { "ElementId", elem.Id.GetIdValue() },
+                        { "Name", elem.Name ?? "" }
                     };
-                    
-                    // 特殊處理 Dimension
-                    if (elem is Dimension dim)
+
+                    if (returnFields != null)
                     {
-                        if (dim.Value.HasValue)
-                            item.Add("Value", Math.Round(dim.Value.Value * 304.8, 2)); // 轉 mm
-                        if (dim.DimensionType != null)
-                            item.Add("DimensionType", dim.DimensionType.Name);
+                        foreach (var f in returnFields)
+                        {
+                            string fieldName = f.Value<string>();
+                            if (string.IsNullOrEmpty(fieldName) || item.ContainsKey(fieldName)) continue;
+                            
+                            Parameter p = FindParameter(elem, fieldName);
+                            if (p != null) 
+                            {
+                                string val = p.AsValueString() ?? p.AsString() ?? "";
+                                item[fieldName] = val;
+                            }
+                            else
+                            {
+                                item[fieldName] = "N/A";
+                            }
+                        }
                     }
-                    
                     return item;
                 }).ToList();
-                
-                return new
-                {
-                    Success = true,
-                    Count = resultList.Count,
-                    TotalFound = elements.Count,
-                    ViewId = targetViewId.IntegerValue,
-                    Category = categoryName,
-                    Elements = resultList
-                };
+
+                return new { Success = true, Count = resultList.Count, Elements = resultList };
             }
             catch (Exception ex)
             {
-                 throw new Exception($"QueryElements 錯誤: {ex.Message}");
+                throw new Exception($"QueryElements 錯誤: {ex.Message}");
             }
+        }
+
+        private Parameter FindParameter(Element elem, string name)
+        {
+            // 1. 優先找實例參數
+            foreach (Parameter p in elem.Parameters)
+            {
+                if (p.Definition.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) return p;
+            }
+
+            // 2. 找類型參數
+            Element typeElem = elem.Document.GetElement(elem.GetTypeId());
+            if (typeElem != null)
+            {
+                foreach (Parameter p in typeElem.Parameters)
+                {
+                    if (p.Definition.Name.Equals(name, StringComparison.OrdinalIgnoreCase)) return p;
+                }
+            }
+
+            return null;
+        }
+
+        private bool CheckFilterMatch(Element elem, string field, string op, string targetValue)
+        {
+            Parameter p = FindParameter(elem, field);
+            if (p == null) return false;
+
+            string val = p.AsValueString() ?? p.AsString() ?? "";
+            
+            switch (op)
+            {
+                case "equals": return val.Equals(targetValue, StringComparison.OrdinalIgnoreCase);
+                case "contains": return val.Contains(targetValue);
+                case "not_equals": return !val.Equals(targetValue, StringComparison.OrdinalIgnoreCase);
+                case "less_than":
+                case "greater_than":
+                    // 移除單位字串並嘗試解析
+                    string cleanVal = System.Text.RegularExpressions.Regex.Replace(val, @"[^\d.-]", "");
+                    if (double.TryParse(cleanVal, out double v1) && 
+                        double.TryParse(targetValue, out double v2))
+                    {
+                        return op == "less_than" ? v1 < v2 : v1 > v2;
+                    }
+                    return false;
+                default: return false;
+            }
+        }
+
+        private ElementId ResolveCategoryId(Document doc, string name)
+        {
+            if (string.IsNullOrEmpty(name)) return ElementId.InvalidElementId;
+
+            // 先用名稱比對
+            foreach (Category cat in doc.Settings.Categories)
+            {
+                if (cat.Name.Equals(name, StringComparison.OrdinalIgnoreCase))
+                    return cat.Id;
+            }
+            // 再嘗試用 BuiltInCategory enum 比對（相容 Revit 2022）
+            BuiltInCategory bic;
+            if (Enum.TryParse("OST_" + name, true, out bic) || Enum.TryParse(name, true, out bic))
+            {
+                return new ElementId(bic);
+            }
+            return ElementId.InvalidElementId;
+        }
+
+        /// <summary>
+        /// 取得視圖架構 (第一階段)
+        /// </summary>
+        private object GetActiveSchema(JObject parameters)
+        {
+            try
+            {
+                Document doc = _uiApp.ActiveUIDocument.Document;
+                IdType? viewId = parameters["viewId"]?.Value<IdType>();
+                ElementId targetViewId = viewId.HasValue ? new ElementId(viewId.Value) : doc.ActiveView.Id;
+
+                var collector = new FilteredElementCollector(doc, targetViewId);
+                var categories = collector.WhereElementIsNotElementType()
+                    .Where(e => e.Category != null)
+                    .GroupBy(e => e.Category.Id.GetIdValue())
+                    .Select(g => {
+                        ElementId catId = new ElementId(g.Key);
+                        Category cat = Category.GetCategory(doc, catId);
+                        string internalName = "Unknown";
+                        if (cat != null)
+                        {
+                            try
+                            {
+                                var bicVal = (BuiltInCategory)(int)(long)g.Key;
+                                if (Enum.IsDefined(typeof(BuiltInCategory), bicVal))
+                                    internalName = bicVal.ToString().Replace("OST_", "");
+                                else
+                                    internalName = cat.Name;
+                            }
+                            catch { internalName = cat.Name; }
+                        }
+                        return new {
+                            Name = cat?.Name ?? "未知品類",
+                            InternalName = internalName,
+                            Count = g.Count()
+                        };
+                    })
+                    .OrderByDescending(c => c.Count)
+                    .ToList();
+
+                return new { Success = true, ViewId = targetViewId.GetIdValue(), Categories = categories };
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"GetActiveSchema 錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 取得品類參數欄位 (第二階段 - A)
+        /// </summary>
+        private object GetCategoryFields(JObject parameters)
+        {
+            try
+            {
+                string categoryName = parameters["category"]?.Value<string>();
+                Document doc = _uiApp.ActiveUIDocument.Document;
+                ElementId catId = ResolveCategoryId(doc, categoryName);
+                
+                if (catId == ElementId.InvalidElementId)
+                    throw new Exception($"找不到品類: {categoryName}");
+
+                Element sample = new FilteredElementCollector(doc)
+                    .OfCategoryId(catId)
+                    .WhereElementIsNotElementType()
+                    .FirstElement();
+                
+                if (sample == null) 
+                    return new { Success = false, Message = $"專案中沒有任何 {categoryName} 元素可供分析" };
+
+                var instanceFields = sample.GetOrderedParameters()
+                    .Where(p => {
+                        InternalDefinition def = p.Definition as InternalDefinition;
+                        return def == null || def.Visible;
+                    })
+                    .Select(p => p.Definition.Name)
+                    .Distinct()
+                    .ToList();
+
+                var typeFields = new List<string>();
+                ElementId typeId = sample.GetTypeId();
+                if (typeId != ElementId.InvalidElementId)
+                {
+                    Element typeElem = doc.GetElement(typeId);
+                    if (typeElem != null)
+                    {
+                        typeFields = typeElem.GetOrderedParameters()
+                            .Where(p => {
+                                InternalDefinition def = p.Definition as InternalDefinition;
+                                return def == null || def.Visible;
+                            })
+                            .Select(p => p.Definition.Name)
+                            .Distinct()
+                            .ToList();
+                    }
+                }
+
+                return new { Success = true, Category = categoryName, InstanceFields = instanceFields, TypeFields = typeFields };
+            }
+            catch (Exception ex)
+            {
+                throw new Exception($"GetCategoryFields 錯誤: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// 取得參數值分布 (第二階段 - B)
+        /// </summary>
+        private object GetFieldValues(JObject parameters)
+        {
+            string categoryName = parameters["category"]?.Value<string>();
+            string fieldName = parameters["fieldName"]?.Value<string>();
+            int maxSamples = parameters["maxSamples"]?.Value<int>() ?? 500;
+            
+            Document doc = _uiApp.ActiveUIDocument.Document;
+            ElementId catId = ResolveCategoryId(doc, categoryName);
+            var elements = new FilteredElementCollector(doc).OfCategoryId(catId).WhereElementIsNotElementType().Take(maxSamples);
+
+            var values = new HashSet<string>();
+            bool isNumeric = false;
+            double min = double.MaxValue;
+            double max = double.MinValue;
+
+            foreach (var elem in elements)
+            {
+                Parameter p = elem.LookupParameter(fieldName);
+                if (p == null)
+                {
+                    Element typeElem = doc.GetElement(elem.GetTypeId());
+                    if (typeElem != null) p = typeElem.LookupParameter(fieldName);
+                }
+                
+                if (p != null && p.HasValue)
+                {
+                    string valString = p.AsValueString() ?? p.AsString();
+                    if (valString != null) values.Add(valString);
+
+                    if (p.StorageType == StorageType.Double || p.StorageType == StorageType.Integer)
+                    {
+                        isNumeric = true;
+                        double val = (p.StorageType == StorageType.Double) ? p.AsDouble() : p.AsInteger();
+                        
+                        // 轉換為 mm (如果適用，Revit 2024 寫法)
+                        if (p.Definition.GetDataType() == SpecTypeId.Length) val *= 304.8;
+                        
+                        if (val < min) min = val;
+                        if (val > max) max = val;
+                    }
+                }
+            }
+
+            return new { 
+                Success = true, 
+                Category = categoryName, 
+                Field = fieldName, 
+                UniqueValues = values.Take(20).ToList(),
+                IsNumeric = isNumeric,
+                Range = isNumeric ? new { Min = Math.Round(min, 2), Max = Math.Round(max, 2) } : null
+            };
         }
 
         /// <summary>
@@ -1610,8 +2437,8 @@ namespace RevitMCP.Core
         private object OverrideElementGraphics(JObject parameters)
         {
             Document doc = _uiApp.ActiveUIDocument.Document;
-            int elementId = parameters["elementId"].Value<int>();
-            int? viewId = parameters["viewId"]?.Value<int>();
+            IdType elementId = parameters["elementId"].Value<IdType>();
+            IdType? viewId = parameters["viewId"]?.Value<IdType>();
 
             // 取得視圖
             View view;
@@ -1730,7 +2557,7 @@ namespace RevitMCP.Core
                 {
                     Success = true,
                     ElementId = elementId,
-                    ViewId = view.Id.IntegerValue,
+                    ViewId = view.Id.GetIdValue(),
                     ViewType = view.ViewType.ToString(),
                     PatternMode = useCutPattern ? "Cut" : "Surface",
                     ViewName = view.Name,
@@ -1745,9 +2572,9 @@ namespace RevitMCP.Core
         private object ClearElementOverride(JObject parameters)
         {
             Document doc = _uiApp.ActiveUIDocument.Document;
-            int? singleElementId = parameters["elementId"]?.Value<int>();
+            IdType? singleElementId = parameters["elementId"]?.Value<IdType>();
             var elementIdsArray = parameters["elementIds"] as JArray;
-            int? viewId = parameters["viewId"]?.Value<int>();
+            IdType? viewId = parameters["viewId"]?.Value<IdType>();
 
             // 取得視圖
             View view;
@@ -1763,14 +2590,14 @@ namespace RevitMCP.Core
             }
 
             // 收集要清除的元素 ID
-            List<int> elementIds = new List<int>();
+            List<IdType> elementIds = new List<IdType>();
             if (singleElementId.HasValue)
             {
                 elementIds.Add(singleElementId.Value);
             }
             if (elementIdsArray != null)
             {
-                elementIds.AddRange(elementIdsArray.Select(id => id.Value<int>()));
+                elementIds.AddRange(elementIdsArray.Select(id => id.Value<IdType>()));
             }
 
             if (elementIds.Count == 0)
@@ -1800,7 +2627,7 @@ namespace RevitMCP.Core
                 {
                     Success = true,
                     ClearedCount = successCount,
-                    ViewId = view.Id.IntegerValue,
+                    ViewId = view.Id.GetIdValue(),
                     ViewName = view.Name,
                     Message = $"已清除 {successCount} 個元素在視圖 '{view.Name}' 的圖形覆寫"
                 };
@@ -1840,12 +2667,12 @@ namespace RevitMCP.Core
             
             // 取得牆體 ID 列表
             var wallIdsArray = parameters["wallIds"] as JArray;
-            int? viewId = parameters["viewId"]?.Value<int>();
+            IdType? viewId = parameters["viewId"]?.Value<IdType>();
             
-            List<int> wallIds = new List<int>();
+            List<IdType> wallIds = new List<IdType>();
             if (wallIdsArray != null)
             {
-                wallIds.AddRange(wallIdsArray.Select(id => id.Value<int>()));
+                wallIds.AddRange(wallIdsArray.Select(id => id.Value<IdType>()));
             }
             
             // 如果沒有提供 wallIds，則查詢視圖中所有牆體
@@ -1853,7 +2680,7 @@ namespace RevitMCP.Core
             {
                 var collector = new FilteredElementCollector(doc, new ElementId(viewId.Value));
                 var walls = collector.OfClass(typeof(Wall)).ToElements();
-                wallIds = walls.Select(w => w.Id.IntegerValue).ToList();
+                wallIds = walls.Select(w => w.Id.GetIdValue()).ToList();
             }
             
             if (wallIds.Count == 0)
@@ -1982,6 +2809,659 @@ namespace RevitMCP.Core
                 TotalPairs = storedCount,
                 Message = $"已恢復 {rejoinedCount} 個接合關係"
             };
+        }
+
+        #endregion
+
+        #region 視圖樣版查詢
+
+        /// <summary>
+        /// 取得所有視圖樣版及其設定
+        /// </summary>
+        private object GetViewTemplates(JObject parameters)
+        {
+            Document doc = _uiApp.ActiveUIDocument.Document;
+            bool includeDetails = parameters["includeDetails"]?.Value<bool>() ?? true;
+
+            // 取得所有視圖樣版 (IsTemplate = true)
+            var viewTemplates = new FilteredElementCollector(doc)
+                .OfClass(typeof(View))
+                .Cast<View>()
+                .Where(v => v.IsTemplate)
+                .OrderBy(v => v.ViewType.ToString())
+                .ThenBy(v => v.Name)
+                .ToList();
+
+            var templateList = new List<object>();
+
+            foreach (var template in viewTemplates)
+            {
+                var templateInfo = new Dictionary<string, object>
+                {
+                    ["ElementId"] = template.Id.GetIdValue(),
+                    ["Name"] = template.Name,
+                    ["ViewType"] = template.ViewType.ToString(),
+                    ["ViewFamily"] = template.ViewType.ToString()
+                };
+
+                if (includeDetails)
+                {
+                    // 取得詳細等級
+                    try
+                    {
+                        templateInfo["DetailLevel"] = template.DetailLevel.ToString();
+                    }
+                    catch { templateInfo["DetailLevel"] = "N/A"; }
+
+                    // 取得視覺樣式
+                    try
+                    {
+                        templateInfo["DisplayStyle"] = template.DisplayStyle.ToString();
+                    }
+                    catch { templateInfo["DisplayStyle"] = "N/A"; }
+
+                    // 取得比例尺
+                    try
+                    {
+                        templateInfo["Scale"] = template.Scale > 0 ? $"1:{template.Scale}" : "N/A";
+                    }
+                    catch { templateInfo["Scale"] = "N/A"; }
+
+                    // 取得視圖樣版控制的參數
+                    try
+                    {
+                        var nonControlledParams = template.GetNonControlledTemplateParameterIds();
+                        var allParams = template.GetTemplateParameterIds();
+                        templateInfo["ControlledParameterCount"] = allParams.Count - nonControlledParams.Count;
+                        templateInfo["TotalParameterCount"] = allParams.Count;
+                    }
+                    catch 
+                    { 
+                        templateInfo["ControlledParameterCount"] = "N/A";
+                        templateInfo["TotalParameterCount"] = "N/A";
+                    }
+
+                    // 取得類別可見性設定（僅列出主要隱藏的類別）
+                    try
+                    {
+                        var hiddenCategories = new List<string>();
+                        var categories = doc.Settings.Categories;
+                        foreach (Category cat in categories)
+                        {
+                            try
+                            {
+                                if (cat.CategoryType == CategoryType.Model || cat.CategoryType == CategoryType.Annotation)
+                                {
+                                    if (!template.GetCategoryHidden(cat.Id))
+                                        continue;
+                                    hiddenCategories.Add(cat.Name);
+                                }
+                            }
+                            catch { }
+                        }
+                        templateInfo["HiddenCategoryCount"] = hiddenCategories.Count;
+                        // 只列出前 10 個隱藏類別
+                        templateInfo["HiddenCategories"] = hiddenCategories.Take(10).ToList();
+                    }
+                    catch { templateInfo["HiddenCategories"] = new List<string>(); }
+
+                    // 取得視圖專屬覆寫（篩選器）
+                    try
+                    {
+                        var filterIds = template.GetFilters();
+                        var filterNames = filterIds
+                            .Select(id => doc.GetElement(id)?.Name ?? "Unknown")
+                            .ToList();
+                        templateInfo["FilterCount"] = filterIds.Count;
+                        templateInfo["Filters"] = filterNames;
+                    }
+                    catch 
+                    { 
+                        templateInfo["FilterCount"] = 0;
+                        templateInfo["Filters"] = new List<string>(); 
+                    }
+
+                    // 取得裁剪設定
+                    try
+                    {
+                        templateInfo["CropBoxActive"] = template.CropBoxActive;
+                        templateInfo["CropBoxVisible"] = template.CropBoxVisible;
+                    }
+                    catch 
+                    { 
+                        templateInfo["CropBoxActive"] = "N/A";
+                        templateInfo["CropBoxVisible"] = "N/A";
+                    }
+
+                    // 取得底層設定
+                    try
+                    {
+                        templateInfo["SupportsUnderlay"] = (template.ViewType == ViewType.FloorPlan || 
+                                                            template.ViewType == ViewType.CeilingPlan ||
+                                                            template.ViewType == ViewType.AreaPlan);
+                    }
+                    catch { templateInfo["SupportsUnderlay"] = false; }
+                }
+
+                templateList.Add(templateInfo);
+            }
+
+            return new
+            {
+                ProjectName = doc.Title,
+                Count = templateList.Count,
+                ViewTemplates = templateList
+            };
+        }
+
+        #endregion
+
+        #region 外牆開口檢討
+
+        /// <summary>
+        /// 執行外牆開口檢討（第45條 + 第110條）
+        /// </summary>
+        private object CheckExteriorWallOpenings(JObject parameters)
+        {
+            Document doc = _uiApp.ActiveUIDocument.Document;
+            UIDocument uidoc = _uiApp.ActiveUIDocument;
+
+            bool checkArticle45 = parameters["checkArticle45"]?.Value<bool>() ?? true;
+            bool checkArticle110 = parameters["checkArticle110"]?.Value<bool>() ?? true;
+            bool colorizeViolations = parameters["colorizeViolations"]?.Value<bool>() ?? true;
+            bool checkBuildingDistance = parameters["checkBuildingDistance"]?.Value<bool>() ?? false;
+            bool exportReport = parameters["exportReport"]?.Value<bool>() ?? false;
+            string reportPath = parameters["reportPath"]?.Value<string>();
+
+            var checker = new ExteriorWallOpeningChecker(doc);
+            var allResults = new List<object>();
+
+            using (Transaction trans = new Transaction(doc, "外牆開口檢討"))
+            {
+                // 使用防禦性交易處理
+                bool isTransactionStarted = false;
+
+                // 2. 取得所有外牆
+                int totalWalls = 0;
+                int totalOpenings = 0;
+                int violations = 0;
+                int warnings = 0;
+                int passed = 0;
+                
+                // 1. 取得基地邊界線
+                // Note: GetPropertyLines doesn't require transaction status to run, assuming it just reads.
+                // However, to be safe and consistent with previous flow, we'll keep logic similar but ensure variables are scoped correctly.
+                List<Curve> propertyLines = null;
+
+                try
+                {
+                    if (trans.Start() == TransactionStatus.Started)
+                    {
+                        isTransactionStarted = true;
+
+                        // DEBUG VERSION LOG
+                        System.Diagnostics.Debug.WriteLine("DLL Version: 2026.01.14.02 - Transaction Started");
+
+                        propertyLines = checker.GetPropertyLines();
+                        if (propertyLines.Count == 0)
+                        {
+                            throw new InvalidOperationException("找不到基地邊界線（PropertyLine）。請確認專案中已建立地界線，且您已結束編輯模式（打勾）。");
+                        }
+
+                        var exteriorWalls = checker.GetExteriorWalls();
+
+                        // 3. 遍歷每面外牆
+                        foreach (var wall in exteriorWalls)
+                        {
+                            totalWalls++;
+                            var openings = checker.GetWallOpenings(wall);
+
+                            foreach (var opening in openings)
+                            {
+                                totalOpenings++;
+                                var openingInfo = checker.GetOpeningInfo(opening);
+                                if (openingInfo == null) continue;
+
+                                // 計算距離
+                                var boundaryResult = checker.CalculateDistanceToBoundary(openingInfo, propertyLines);
+                                var distanceToBoundary = boundaryResult.MinDistance;
+                                var distanceToBuilding = checkBuildingDistance
+                                    ? checker.CalculateDistanceToAdjacentBuildings(openingInfo, wall)
+                                    : double.MaxValue;
+
+                                // 執行檢查
+                                ExteriorWallOpeningChecker.Article45Result article45Result = null;
+                                ExteriorWallOpeningChecker.Article110Result article110Result = null;
+
+                                if (checkArticle45)
+                                {
+                                    article45Result = checker.CheckArticle45(openingInfo, distanceToBoundary, distanceToBuilding);
+                                }
+
+                                if (checkArticle110)
+                                {
+                                    article110Result = checker.CheckArticle110(openingInfo, distanceToBoundary, distanceToBuilding);
+                                }
+
+                                // 視覺化
+                                if (colorizeViolations)
+                                {
+                                    var overallStatus = DetermineOverallStatus(article45Result, article110Result);
+                                    ColorizeOpening(doc, uidoc.ActiveView, opening.Id, overallStatus);
+
+                                    if (overallStatus == ExteriorWallOpeningChecker.CheckStatus.Fail) violations++;
+                                    else if (overallStatus == ExteriorWallOpeningChecker.CheckStatus.Warning) warnings++;
+                                    else passed++;
+
+                                    // 如果違規或有警告，建立標註 (Dimension)
+                                    if ((overallStatus == ExteriorWallOpeningChecker.CheckStatus.Fail || overallStatus == ExteriorWallOpeningChecker.CheckStatus.Warning) && boundaryResult.ClosestPoint != null)
+                                    {
+                                        try
+                                        {
+                                            // 1. 定義標註線 (Opening Center -> Boundary Point)
+                                            // 確保 Z 軸一致 (在開口高度)
+                                            XYZ start = openingInfo.Location;
+                                            XYZ end = new XYZ(boundaryResult.ClosestPoint.X, boundaryResult.ClosestPoint.Y, start.Z);
+                                            
+                                            // 避免極短線段
+                                            if (start.DistanceTo(end) > 0.01)
+                                            {
+                                                Line line = Line.CreateBound(start, end);
+
+                                                // 2. 建立參考平面 (SketchPlane)
+                                                // 需要一個包含該線的平面。水平線通常位於 XY 平面。
+                                                XYZ norm = XYZ.BasisZ;
+                                                Plane plane = Plane.CreateByNormalAndOrigin(norm, start);
+                                                SketchPlane sketchPlane = SketchPlane.Create(doc, plane);
+
+                                                // 3. 建立模型線 (Model Line)
+                                                ModelCurve modelCurve = doc.Create.NewModelCurve(line, sketchPlane);
+                                                
+                                                // 嘗試設定線樣式為紅色 (若有)
+                                                // (省略樣式設定以保持簡單)
+
+                                                // 4. 建立尺寸標註 (Dimension)
+                                                // 尺寸標註必須依附於 View。如果 View 是 3D View，必須設定 WorkPoint。
+                                                // 簡單起見，嘗試建立基於模型線端點的尺寸。
+                                                
+                                                ReferenceArray refArray = new ReferenceArray();
+                                                refArray.Append(modelCurve.GeometryCurve.GetEndPointReference(0));
+                                                refArray.Append(modelCurve.GeometryCurve.GetEndPointReference(1));
+
+                                                Dimension dim = doc.Create.NewDimension(uidoc.ActiveView, line, refArray);
+
+                                                // 5. 將標註設為紅色
+                                                OverrideGraphicSettings redOverride = new OverrideGraphicSettings();
+                                                redOverride.SetProjectionLineColor(new Color(255, 0, 0)); // 紅色
+                                                uidoc.ActiveView.SetElementOverrides(dim.Id, redOverride);
+                                            }
+                                        }
+                                        catch (Exception dimEx)
+                                        {
+                                            // 標註建立失敗不應中斷檢討流程
+                                            System.Diagnostics.Debug.WriteLine($"無法建立標註: {dimEx.Message}");
+                                        }
+                                    }
+                                }
+
+                                // 記錄結果
+                                allResults.Add(new
+                                {
+                                    openingId = openingInfo.OpeningId.GetIdValue(),
+                                    wallId = openingInfo.WallId?.GetIdValue(),
+                                    openingType = openingInfo.OpeningType,
+                                    location = new
+                                    {
+                                        x = Math.Round(openingInfo.Location.X * 304.8, 2),
+                                        y = Math.Round(openingInfo.Location.Y * 304.8, 2),
+                                        z = Math.Round(openingInfo.Location.Z * 304.8, 2)
+                                    },
+                                    area = Math.Round(openingInfo.Area * 0.0929, 2), // 平方英尺 → 平方公尺
+                                    article45 = article45Result,
+                                    article110 = article110Result
+                                });
+                            }
+                        }
+
+                        trans.Commit();
+                    }
+                    else
+                    {
+                        throw new InvalidOperationException("無法啟動 Revit 交易，可能目前正處於其他命令或編輯模式中。");
+                    }
+
+                    var summary = new
+                    {
+                        totalWalls,
+                        totalOpenings,
+                        violations,
+                        warnings,
+                        passed,
+                        propertyLineCount = propertyLines.Count
+                    };
+
+                    var response = new
+                    {
+                        success = true,
+                        summary,
+                        details = allResults,
+                        message = $"檢討完成：共檢查 {totalWalls} 面外牆、{totalOpenings} 個開口"
+                    };
+
+                    // 匯出報表（可選）
+                    if (exportReport && !string.IsNullOrEmpty(reportPath))
+                    {
+                        System.IO.File.WriteAllText(reportPath,
+                            Newtonsoft.Json.JsonConvert.SerializeObject(response, Newtonsoft.Json.Formatting.Indented));
+                    }
+
+                    return response;
+                }
+                catch (Exception ex)
+                {
+                    if (isTransactionStarted && trans.GetStatus() == TransactionStatus.Started)
+                    {
+                        trans.RollBack();
+                    }
+                    throw new Exception($"外牆開口檢討失敗：{ex.Message}");
+                }
+            }
+        }
+
+        /// <summary>
+        /// 判定總體狀態
+        /// </summary>
+        private ExteriorWallOpeningChecker.CheckStatus DetermineOverallStatus(
+            ExteriorWallOpeningChecker.Article45Result article45Result,
+            ExteriorWallOpeningChecker.Article110Result article110Result)
+        {
+            var statuses = new List<ExteriorWallOpeningChecker.CheckStatus>();
+
+            if (article45Result != null) statuses.Add(article45Result.OverallStatus);
+            if (article110Result != null) statuses.Add(article110Result.OverallStatus);
+
+            if (statuses.Contains(ExteriorWallOpeningChecker.CheckStatus.Fail)) 
+                return ExteriorWallOpeningChecker.CheckStatus.Fail;
+            if (statuses.Contains(ExteriorWallOpeningChecker.CheckStatus.Warning)) 
+                return ExteriorWallOpeningChecker.CheckStatus.Warning;
+            return ExteriorWallOpeningChecker.CheckStatus.Pass;
+        }
+
+        /// <summary>
+        /// 為開口元素設定顏色
+        /// 同時設定 Cut（平面圖）和 Surface（立面圖）樣式，確保所有視圖類型都能顯示
+        /// </summary>
+        private void ColorizeOpening(Document doc, View view, ElementId openingId, ExteriorWallOpeningChecker.CheckStatus status)
+        {
+            var overrideSettings = new OverrideGraphicSettings();
+            ElementId solidPatternId = GetSolidFillPatternId(doc);
+            Color color;
+
+            switch (status)
+            {
+                case ExteriorWallOpeningChecker.CheckStatus.Fail:
+                    color = new Color(255, 0, 0); // 紅色
+                    break;
+                case ExteriorWallOpeningChecker.CheckStatus.Warning:
+                    color = new Color(255, 165, 0); // 橘色
+                    break;
+                case ExteriorWallOpeningChecker.CheckStatus.Pass:
+                    color = new Color(0, 255, 0); // 綠色
+                    break;
+                default:
+                    return;
+            }
+
+            // 投影線顏色（所有視圖通用）
+            overrideSettings.SetProjectionLineColor(color);
+
+            // Surface pattern（立面/剖面/3D）
+            overrideSettings.SetSurfaceForegroundPatternColor(color);
+            if (solidPatternId != null && solidPatternId != ElementId.InvalidElementId)
+            {
+                overrideSettings.SetSurfaceForegroundPatternId(solidPatternId);
+                overrideSettings.SetSurfaceForegroundPatternVisible(true);
+            }
+
+            // Cut pattern（平面圖中門窗被牆切割時顯示）
+            overrideSettings.SetCutForegroundPatternColor(color);
+            if (solidPatternId != null && solidPatternId != ElementId.InvalidElementId)
+            {
+                overrideSettings.SetCutForegroundPatternId(solidPatternId);
+                overrideSettings.SetCutForegroundPatternVisible(true);
+            }
+
+            // Cut line 顏色
+            overrideSettings.SetCutLineColor(color);
+
+            view.SetElementOverrides(openingId, overrideSettings);
+        }
+
+        #endregion
+
+        #region 明細表建立
+
+        /// <summary>
+        /// 建立視圖明細表（ViewSchedule）
+        /// </summary>
+        private object CreateViewSchedule(JObject parameters)
+        {
+            Document doc = _uiApp.ActiveUIDocument.Document;
+            string scheduleName = parameters["name"]?.Value<string>() ?? "MCP製作的明細表";
+            string categoryName = parameters["category"]?.Value<string>();
+            var fieldNames = parameters["fields"]?.ToObject<List<string>>() ?? new List<string>();
+
+            using (Transaction trans = new Transaction(doc, "建立明細表"))
+            {
+                trans.Start();
+
+                ElementId categoryId = ElementId.InvalidElementId;
+                if (!string.IsNullOrEmpty(categoryName))
+                {
+                    foreach (Category cat in doc.Settings.Categories)
+                    {
+                        if (cat.Name.Equals(categoryName, StringComparison.OrdinalIgnoreCase))
+                        {
+                            categoryId = cat.Id;
+                            break;
+                        }
+                    }
+                }
+
+                ViewSchedule schedule = ViewSchedule.CreateSchedule(doc, categoryId);
+                schedule.Name = scheduleName;
+
+                var schedulableFields = schedule.Definition.GetSchedulableFields();
+                var addedFields = new List<string>();
+                var missingFields = new List<string>();
+
+                foreach (string fieldName in fieldNames)
+                {
+                    var sf = schedulableFields.FirstOrDefault(f =>
+                        f.GetName(doc).Equals(fieldName, StringComparison.OrdinalIgnoreCase));
+                    if (sf != null)
+                    {
+                        schedule.Definition.AddField(sf);
+                        addedFields.Add(fieldName);
+                    }
+                    else
+                    {
+                        missingFields.Add(fieldName);
+                    }
+                }
+
+                trans.Commit();
+
+                return new
+                {
+                    ElementId = schedule.Id.GetIdValue(),
+                    Name = schedule.Name,
+                    FieldCount = schedule.Definition.GetFieldCount(),
+                    AddedFields = addedFields,
+                    MissingFields = missingFields,
+                    Message = $"成功建立明細表: {schedule.Name}"
+                };
+            }
+        }
+
+        #endregion
+
+        #region MEP 工具
+
+        /// <summary>
+        /// 取得目前選取的元素
+        /// </summary>
+        private object GetSelectedElements()
+        {
+            UIDocument uiDoc = _uiApp.ActiveUIDocument;
+            Document doc = uiDoc.Document;
+            var selection = uiDoc.Selection.GetElementIds();
+
+            var elements = selection.Select(id =>
+            {
+                Element e = doc.GetElement(id);
+                return new
+                {
+                    Id = e.Id.GetIdValue(),
+                    Name = e.Name,
+                    Category = e.Category?.Name ?? "Unknown"
+                };
+            }).ToList();
+
+            return new
+            {
+                Count = elements.Count,
+                Elements = elements
+            };
+        }
+
+        /// <summary>
+        /// 取得元素的 Connector（接頭）資訊
+        /// </summary>
+        private object GetConnectorInfo(JObject parameters)
+        {
+            Document doc = _uiApp.ActiveUIDocument.Document;
+            IdType elementIdValue = parameters["elementId"]?.Value<IdType>() ?? 0;
+            Element element = doc.GetElement(new ElementId(elementIdValue));
+
+            if (element == null) throw new Exception("找不到元素");
+
+            ConnectorSet connectors = null;
+            if (element is MEPCurve curve)
+                connectors = curve.ConnectorManager.Connectors;
+            else if (element is FamilyInstance fi)
+                connectors = fi.MEPModel?.ConnectorManager?.Connectors;
+
+            if (connectors == null)
+                return new { Message = "此元素沒有接頭資訊" };
+
+            var connectorList = new List<object>();
+            foreach (Connector conn in connectors)
+            {
+                connectorList.Add(new
+                {
+                    ConnectorId = conn.Id,
+                    Type = conn.ConnectorType.ToString(),
+                    Origin = new
+                    {
+                        X = Math.Round(conn.Origin.X * 304.8, 2),
+                        Y = Math.Round(conn.Origin.Y * 304.8, 2),
+                        Z = Math.Round(conn.Origin.Z * 304.8, 2)
+                    },
+                    IsConnected = conn.IsConnected,
+                    Shape = conn.Shape.ToString(),
+                    Description = conn.Description
+                });
+            }
+
+            return new
+            {
+                ElementId = element.Id.GetIdValue(),
+                ElementName = element.Name,
+                ConnectorCount = connectorList.Count,
+                Connectors = connectorList
+            };
+        }
+
+        /// <summary>
+        /// 在管端安裝管帽/法蘭
+        /// </summary>
+        private object AddPipeCap(JObject parameters)
+        {
+            Document doc = _uiApp.ActiveUIDocument.Document;
+            IdType pipeIdValue = parameters["pipeId"]?.Value<IdType>() ?? 0;
+            string familyName = parameters["familyName"]?.Value<string>();
+
+            Element pipe = doc.GetElement(new ElementId(pipeIdValue));
+            if (pipe == null) throw new Exception("找不到管件");
+
+            using (Transaction trans = new Transaction(doc, "安裝管帽"))
+            {
+                trans.Start();
+
+                FamilySymbol symbol = new FilteredElementCollector(doc)
+                    .OfClass(typeof(FamilySymbol))
+                    .Cast<FamilySymbol>()
+                    .FirstOrDefault(s => s.Name == familyName || s.FamilyName == familyName);
+
+                if (symbol == null) throw new Exception($"找不到族群類型: {familyName}");
+                if (!symbol.IsActive) symbol.Activate();
+
+                Connector openConnector = null;
+                ConnectorManager cm = (pipe as MEPCurve)?.ConnectorManager;
+                if (cm != null)
+                {
+                    foreach (Connector conn in cm.Connectors)
+                    {
+                        if (!conn.IsConnected)
+                        {
+                            openConnector = conn;
+                            break;
+                        }
+                    }
+                }
+
+                if (openConnector == null) throw new Exception("管件沒有可用的未連線接頭");
+
+                FamilyInstance instance = doc.Create.NewFamilyInstance(
+                    openConnector.Origin, symbol,
+                    Autodesk.Revit.DB.Structure.StructuralType.NonStructural);
+
+                // 嘗試連接法蘭接頭與管件接頭
+                ConnectorManager fiCm = instance.MEPModel?.ConnectorManager;
+                if (fiCm != null)
+                {
+                    foreach (Connector conn in fiCm.Connectors)
+                    {
+                        if (!conn.IsConnected && conn.Origin.DistanceTo(openConnector.Origin) < 0.1)
+                        {
+                            conn.ConnectTo(openConnector);
+                            break;
+                        }
+                    }
+                }
+
+                // 自動對齊管徑
+                double diameter = openConnector.Radius * 2;
+                if (diameter > 0)
+                {
+                    Parameter sizeParam = instance.LookupParameter("Nominal Diameter")
+                                       ?? instance.LookupParameter("Size");
+                    if (sizeParam != null && !sizeParam.IsReadOnly)
+                    {
+                        sizeParam.Set(diameter);
+                    }
+                }
+
+                trans.Commit();
+
+                return new
+                {
+                    Success = true,
+                    ElementId = instance.Id.GetIdValue(),
+                    Message = $"成功在 {pipe.Name} 安裝 {symbol.Name}"
+                };
+            }
         }
 
         #endregion

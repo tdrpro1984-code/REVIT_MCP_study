@@ -2,6 +2,7 @@ using System;
 using Autodesk.Revit.Attributes;
 using Autodesk.Revit.DB;
 using Autodesk.Revit.UI;
+using RevitMCP.Core;
 
 namespace RevitMCP.Commands
 {
@@ -25,13 +26,14 @@ namespace RevitMCP.Commands
                 {
                     // 如果已連線，則停止
                     Application.StopMCPService();
+                    Logger.Info("使用者手動停止 MCP 服務");
                     TaskDialog.Show("MCP 服務", "🔴 服務已停止");
                 }
                 else
                 {
                     // 如果未連線，則啟動
+                    Logger.Info("使用者手動啟動 MCP 服務");
                     Application.StartMCPService(commandData.Application);
-                    TaskDialog.Show("MCP 服務", "🟢 服務已啟動\n(監聽埠號: 8765)");
                 }
 
                 return Result.Succeeded;

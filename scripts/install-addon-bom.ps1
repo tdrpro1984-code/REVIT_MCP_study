@@ -172,7 +172,7 @@ $addonPath = $null
 $foundVersions = @()
 
 # 只檢查支援的版本（白名單方式，更安全）
-$supportedVersions = @("2024", "2023", "2022")
+$supportedVersions = @("2026", "2025", "2024", "2023", "2022")
 
 foreach ($version in $supportedVersions) {
     $testPath = Join-Path $appDataPath "Autodesk\Revit\Addins\$version"
@@ -193,7 +193,7 @@ if ($null -eq $revitVersion) {
     Write-Host ""
     Write-Host "可能的原因：" -ForegroundColor Yellow
     Write-Host "- 您的電腦沒有安裝 Revit" -ForegroundColor Yellow
-    Write-Host "- 支援的版本：2022、2023、2024" -ForegroundColor Yellow
+    Write-Host "- 支援的版本：2022、2023、2024、2025、2026" -ForegroundColor Yellow
     Write-Host ""
     Write-Host "檢查的路徑：$appDataPath\Autodesk\Revit\Addins\" -ForegroundColor Yellow
     Read-Host "按 Enter 結束"
@@ -269,7 +269,7 @@ else {
     Write-Host "1. 打開命令提示字元" -ForegroundColor Yellow
     Write-Host "2. cd `"$projectRoot\MCP`"" -ForegroundColor Yellow
     if ($revitVersion -eq "2024") {
-        Write-Host "3. dotnet build -c Release RevitMCP.2024.csproj" -ForegroundColor Yellow
+        Write-Host "3. dotnet build -c Release.R24 RevitMCP.csproj" -ForegroundColor Yellow
     }
     else {
         Write-Host "3. dotnet build -c Release" -ForegroundColor Yellow
@@ -380,6 +380,34 @@ if (Test-Path $sourceJson) {
     }
     catch {
         Write-Host "⚠️  警告：無法複製 Newtonsoft.Json.dll（非關鍵檔案）" -ForegroundColor Yellow
+    }
+}
+
+Write-Host ""
+
+# ============================================================================
+# 額外檢查：驗證 WebSocket Port 配置
+# ============================================================================
+$configDir = Join-Path $appDataPath "RevitMCP"
+$configJsonPath = Join-Path $configDir "config.json"
+
+if (Test-Path $configJsonPath) {
+    try {
+        $configJson = Get-Content $configJsonPath -Raw | ConvertFrom-Json
+        $currentPort = $configJson.Port
+        
+        if ($currentPort -ne 8964) {
+            Write-Host "⚠️ 注意：偵測到目前的 MCP Port 為 $currentPort (預設應為 8964)" -ForegroundColor Yellow
+            $resetChoice = Read-Host "是否要將 Port 重設為標準值 8964？(Y/N)"
+            if ($resetChoice -eq "Y" -or $resetChoice -eq "y") {
+                $configJson.Port = 8964
+                $configJson | ConvertTo-Json | Set-Content $configJsonPath -Encoding UTF8
+                Write-Host "✓ 已成功重設 Port 為 8964" -ForegroundColor Green
+            }
+        }
+    }
+    catch {
+        Write-Host "⚠️ 警告：無法解析 config.json，跳過 Port 檢查" -ForegroundColor Yellow
     }
 }
 
